@@ -51,13 +51,9 @@ func walk(path string, info os.FileInfo, err error) error {
 func inspect() {
 	for file := range queue {
 		log.Println("Receive ", file.Path)
-		data, err := db.Get([]byte(file.Digest), nil)
-		if err != nil {
-			log.Fatal("Error when accessing key for", file.Path)
-		}
-
-		if data == nil {
-			err = db.Put(file.Digest, []byte(file.Path), nil)
+		data, err := db.Get(file.Digest[:], nil)
+		if err == leveldb.ErrNotFound {
+			err = db.Put(file.Digest[:], []byte(file.Path), nil)
 		} else {
 			log.Println(string(data), "has dup", file.Path)
 		}
