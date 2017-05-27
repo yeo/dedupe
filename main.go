@@ -1,5 +1,15 @@
 package main
 
+// Find file with a certain extension, and keep the oldest version since that maybe
+// the original one
+//
+// Usage:
+//
+// To run in dry mode
+// dedupe targetdirectory -e extension,list,by,comma
+// When ready:
+// dedupe targetdirectory -e extension,list,by,comma --move-to directory-to-keep-delete-file
+// Dedupe don't really delete file, it's move file into a folder in your home directory call ~/.dedupe/tmp/
 import (
 	"crypto/sha512"
 	"io/ioutil"
@@ -50,14 +60,17 @@ func walk(path string, info os.FileInfo, err error) error {
 
 func inspect() {
 	for file := range queue {
-		log.Println("Receive ", file.Path)
 		data, err := db.Get(file.Digest[:], nil)
 		if err == leveldb.ErrNotFound {
 			err = db.Put(file.Digest[:], []byte(file.Path), nil)
 		} else {
-			log.Println(string(data), "has dup", file.Path)
+			clean(data, file)
 		}
 	}
+}
+
+func clean(source []byte, dupe *File) {
+	log.Println(string(source), "has dup", dupe.Path)
 }
 
 func homedir() string {
@@ -77,7 +90,7 @@ func main() {
 	}
 
 	var err error
-	db, err = leveldb.OpenFile(homedir()+"/.dedupe", nil)
+	db, err = leveldb.OpenFile(homedir()+"/.dedupe/work", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
