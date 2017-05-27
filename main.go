@@ -2,46 +2,96 @@ package main
 
 import (
 	"crypto/sha512"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"os/user"
+
 	"path/filepath"
+	"strings"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
-func printFile(path string, info os.FileInfo, err error) error {
+type File struct {
+	Path   string
+	Digest [64]byte
+}
+
+var (
+	db    *leveldb.DB
+	queue chan *File
+)
+
+func ignore(path string) bool {
+	return strings.HasSuffix(path, ".git") || strings.HasPrefix(path, ".")
+}
+
+func walk(path string, info os.FileInfo, err error) error {
 	if err != nil {
 		log.Print(err)
 		return nil
 	}
 
-	if info.IsDir() {
+	if info.IsDir() || ignore(path) {
 		return nil
 	}
 
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Print(err)
+		log.Print("Read file error: ", err)
 		return nil
 	}
 
 	digest := sha512.Sum512(data)
-	log.Println(path, digest)
-
-	fmt.Println(path)
+	queue <- &File{path, digest}
 	return nil
 }
 
+func inspect() {
+	for file := range queue {
+		log.Println("Receive ", file.Path)
+		data, err := db.Get([]byte(file.Digest), nil)
+		if err != nil {
+			log.Fatal("Error when accessing key for", file.Path)
+		}
+
+		if data == nil {
+			err = db.Put(file.Digest, []byte(file.Path), nil)
+		} else {
+			log.Println(string(data), "has dup", file.Path)
+		}
+	}
+}
+
+func homedir() string {
+	usr, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return usr.HomeDir
+}
+
 func main() {
+	queue = make(chan *File, 50000)
+
 	if len(os.Args) < 1 {
 		log.Println("MIssing arguments")
 		return
 	}
 
+	var err error
+	db, err = leveldb.OpenFile(homedir()+"/.dedupe", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Close()
+
 	searchDir := os.Args[1]
 
-	err := filepath.Walk(searchDir, printFile)
-
+	go inspect()
+	err = filepath.Walk(searchDir, walk)
 	if err != nil {
 		log.Fatal(err)
 	}
