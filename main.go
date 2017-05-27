@@ -6,12 +6,13 @@ package main
 // Usage:
 //
 // To run in dry mode
-// dedupe targetdirectory -e extension,list,by,comma
+// dedupe targetdirectory -extension=,list,by,comma
 // When ready:
-// dedupe targetdirectory -e extension,list,by,comma --move-to directory-to-keep-delete-file
+// dedupe targetdirectory -extension=,list,by,comma -move-to=dir
 // Dedupe don't really delete file, it's move file into a folder in your home directory call ~/.dedupe/tmp/
 import (
 	"crypto/sha512"
+	"flag"
 	"io/ioutil"
 	"log"
 	"os"
@@ -31,10 +32,23 @@ type File struct {
 var (
 	db    *leveldb.DB
 	queue chan *File
+
+	moveTo    string
+	dry       bool
+	extension []string
 )
 
 func ignore(path string) bool {
-	return strings.HasSuffix(path, ".git") || strings.HasPrefix(path, ".")
+	if strings.HasSuffix(path, ".git") || strings.HasPrefix(path, ".") {
+		return true
+	}
+	for _, t := range extension {
+		if strings.HasSuffix(path, t) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func walk(path string, info os.FileInfo, err error) error {
@@ -88,6 +102,16 @@ func main() {
 		log.Println("MIssing arguments")
 		return
 	}
+
+	dry = true
+	m := flag.String("move-to", "", "direcory to keep dup file(for backup)")
+	moveTo = *m
+	fileTypes := flag.String("extension", "jpg,png,gif", "file type")
+	if moveTo != "" {
+		dry = false
+		log.Println("!!! ACTUALLY DELETE FILE NOW !!!")
+	}
+	extension = strings.Split(*fileTypes, ",")
 
 	var err error
 	db, err = leveldb.OpenFile(homedir()+"/.dedupe/work", nil)
