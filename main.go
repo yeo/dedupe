@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
 	"os/user"
 
 	"path/filepath"
@@ -24,14 +25,20 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+const (
+	maxQueuSize = 50000
+)
+
 type File struct {
 	Path   string
 	Digest [64]byte
 }
 
 var (
-	db    *leveldb.DB
-	queue chan *File
+	searchDir string
+	db        *leveldb.DB
+	queue     chan *File
+	done      chan bool
 
 	moveTo    string
 	dry       bool
@@ -75,7 +82,9 @@ func walk(path string, info os.FileInfo, err error) error {
 func inspect() {
 	for file := range queue {
 		data, err := db.Get(file.Digest[:], nil)
+		log.Println(err)
 		if err == leveldb.ErrNotFound {
+			log.Println("Insert", file.Digest[:], file.Path)
 			err = db.Put(file.Digest[:], []byte(file.Path), nil)
 		} else {
 			clean(data, file)
@@ -100,11 +109,11 @@ func homedir() string {
 }
 
 func setup() {
-	searchDir := os.Args[1]
-	queue = make(chan *File, 50000)
+	searchDir = os.Args[1]
+	queue = make(chan *File, maxQueuSize)
 
 	if len(os.Args) < 1 {
-		log.Println("MIssing arguments")
+		log.Fatal("MIssing arguments")
 		return
 	}
 
@@ -112,10 +121,12 @@ func setup() {
 	m := flag.String("move-to", "", "direcory to keep dup file(for backup)")
 	moveTo = *m
 	fileTypes := flag.String("extension", "jpg,png,gif", "file type")
+
 	if moveTo != "" {
 		dry = false
 		log.Println("!!! ACTUALLY DELETE FILE NOW !!!")
 	}
+
 	extension = strings.Split(*fileTypes, ",")
 
 	var err error
@@ -123,6 +134,14 @@ func setup() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	log.Println("============================")
+	log.Println("Dedupe")
+	log.Println("  -> dry mode", dry)
+	log.Println("  -> searchDir", searchDir)
+	log.Println("  -> extension", extension)
+	log.Println("   -> moveTo", moveTo)
+	log.Println("============================\n\n")
 
 	go inspect()
 }
@@ -132,7 +151,7 @@ func teardown() {
 }
 
 func run() {
-	if err = filepath.Walk(searchDir, walk); err != nil {
+	if err := filepath.Walk(searchDir, walk); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -140,5 +159,16 @@ func run() {
 func main() {
 	setup()
 	run()
-	teardown()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	select {
+	case s := <-done:
+		teardown()
+	case s := <-c:
+		log.Println("Force shutdown")
+		teardown()
+		os.Exit(1)
+	}
 }
