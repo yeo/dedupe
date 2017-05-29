@@ -84,7 +84,11 @@ func inspect() {
 }
 
 func clean(source []byte, dupe *File) {
-	log.Println(string(source), "has dup", dupe.Path)
+	if dry == true {
+		log.Println(string(source), "has dup", dupe.Path)
+	} else {
+		os.Rename(dupe.Path, moveTo+"/"+dupe.Path)
+	}
 }
 
 func homedir() string {
