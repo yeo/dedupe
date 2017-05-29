@@ -82,14 +82,15 @@ func walk(path string, info os.FileInfo, err error) error {
 func inspect() {
 	for file := range queue {
 		data, err := db.Get(file.Digest[:], nil)
-		log.Println(err)
 		if err == leveldb.ErrNotFound {
-			log.Println("Insert", file.Digest[:], file.Path)
 			err = db.Put(file.Digest[:], []byte(file.Path), nil)
 		} else {
-			clean(data, file)
+			if string(data) != file.Path {
+				clean(data, file)
+			}
 		}
 	}
+	done <- true
 }
 
 func clean(source []byte, dupe *File) {
@@ -111,6 +112,7 @@ func homedir() string {
 func setup() {
 	searchDir = os.Args[1]
 	queue = make(chan *File, maxQueuSize)
+	done = make(chan bool)
 
 	if len(os.Args) < 1 {
 		log.Fatal("MIssing arguments")
@@ -154,6 +156,7 @@ func run() {
 	if err := filepath.Walk(searchDir, walk); err != nil {
 		log.Fatal(err)
 	}
+	close(queue)
 }
 
 func main() {
@@ -164,9 +167,9 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 
 	select {
-	case s := <-done:
+	case <-done:
 		teardown()
-	case s := <-c:
+	case <-c:
 		log.Println("Force shutdown")
 		teardown()
 		os.Exit(1)
