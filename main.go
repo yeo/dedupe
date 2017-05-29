@@ -87,7 +87,7 @@ func clean(source []byte, dupe *File) {
 	if dry == true {
 		log.Println(string(source), "has dup", dupe.Path)
 	} else {
-		os.Rename(dupe.Path, moveTo+"/"+dupe.Path)
+		//os.Rename(dupe.Path, moveTo+"/"+dupe.Path)
 	}
 }
 
@@ -99,7 +99,8 @@ func homedir() string {
 	return usr.HomeDir
 }
 
-func main() {
+func setup() {
+	searchDir := os.Args[1]
 	queue = make(chan *File, 50000)
 
 	if len(os.Args) < 1 {
@@ -123,13 +124,21 @@ func main() {
 		log.Fatal(err)
 	}
 
-	defer db.Close()
-
-	searchDir := os.Args[1]
-
 	go inspect()
-	err = filepath.Walk(searchDir, walk)
-	if err != nil {
+}
+
+func teardown() {
+	db.Close()
+}
+
+func run() {
+	if err = filepath.Walk(searchDir, walk); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func main() {
+	setup()
+	run()
+	teardown()
 }
