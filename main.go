@@ -50,6 +50,11 @@ func ignore(path string) bool {
 	if strings.HasSuffix(path, ".git") || strings.HasPrefix(path, ".") {
 		return true
 	}
+
+	if extension[0] == "*" {
+		return false
+	}
+
 	for _, t := range extension {
 		if strings.HasSuffix(path, t) {
 			return false
