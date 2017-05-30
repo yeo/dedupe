@@ -13,6 +13,7 @@ package main
 import (
 	"crypto/sha512"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -97,7 +98,18 @@ func clean(source []byte, dupe *File) {
 	if dry == true {
 		log.Println(string(source), "has dup", dupe.Path)
 	} else {
-		//os.Rename(dupe.Path, moveTo+"/"+dupe.Path)
+		// TODO: Improve performance for this to avoid too many stat call
+		dest := moveTo + "/" + dupe.Path
+		log.Println("mv", dupe.Path, dest)
+		if parts := strings.Split(dest, "/"); len(parts) > 0 {
+			parts[len(parts)-1] = ""
+			_, err := os.Stat(strings.Join(parts, "/"))
+			if os.IsNotExist(err) {
+				os.MkdirAll(strings.Join(parts, "/"), 0755)
+			}
+		}
+
+		os.Rename(dupe.Path, dest)
 	}
 }
 
@@ -110,19 +122,23 @@ func homedir() string {
 }
 
 func setup() {
-	searchDir = os.Args[1]
+	m := flag.String("move-to", "", "direcory to keep dup file(for backup)")
+	fileTypes := flag.String("extension", "jpg,png,gif", "file type")
+	flag.Parse()
+
 	queue = make(chan *File, maxQueuSize)
 	done = make(chan bool)
 
-	if len(os.Args) < 1 {
-		log.Fatal("MIssing arguments")
+	if args := flag.Args(); len(args) < 1 {
+		fmt.Println("Usage:\n  dedupe -extension=ext,list -move-to=outpu-target lookup-dir")
+		os.Exit(1)
 		return
 	}
 
+	searchDir = flag.Args()[0]
+
 	dry = true
-	m := flag.String("move-to", "", "direcory to keep dup file(for backup)")
 	moveTo = *m
-	fileTypes := flag.String("extension", "jpg,png,gif", "file type")
 
 	if moveTo != "" {
 		dry = false
